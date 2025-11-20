@@ -34,17 +34,49 @@ app_logger.setLevel(logging.INFO)
 app_logger.propagate = False
 
 counter = 0
+delayed_batch = []
+
 try:
     while True:
         counter += 1
-        app_logger.info(f"Processing item {counter}", extra={"counter": counter, "fake_data": "test", "timestamp": time.time()})
-        print(f"Sent log #{counter}")
 
-        if counter % 5 == 0:
+        log_message = f"Processing item {counter}"
+        if counter % 2 == 0:
+            log_message += " [DELAYED EVENT]"
+
+        record = app_logger.makeRecord(
+            app_logger.name,
+            logging.INFO,
+            "(unknown file)",
+            0,
+            log_message,
+            (),
+            None
+        )
+        record.created = time.time()
+        record.counter = counter
+        record.fake_data = "test"
+        record.is_delayed = counter % 2 == 0
+
+        if counter % 2 == 0:
+            delayed_batch.append(record)
+            print(f"Added log #{counter} to delayed batch (batch size: {len(delayed_batch)})")
+        else:
+            app_logger.handle(record)
+            print(f"Sent log #{counter} immediately")
+
+        if counter % 50 == 0:
+            if delayed_batch:
+                print(f"\n>>> Flushing {len(delayed_batch)} DELAYED logs (late arrival) <<<")
+                for delayed_record in delayed_batch:
+                    app_logger.handle(delayed_record)
+                    print(f"  Sent delayed log #{delayed_record.counter}")
+                delayed_batch.clear()
+
             logger_provider.force_flush()
-            print("Flush complete\n")
+            print("Provider flush complete\n")
 
-        time.sleep(1)
+        time.sleep(0.1)
 except KeyboardInterrupt:
     logger_provider.force_flush()
     logger_provider.shutdown()
